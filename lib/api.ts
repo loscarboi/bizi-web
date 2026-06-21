@@ -190,6 +190,20 @@ export async function uploadGarminExport(file: File): Promise<GarminImportResult
   return res.json();
 }
 
+export interface HistorialPunto {
+  fecha: string;
+  valor: number | null;
+}
+
+export interface MarcadorHistorial {
+  tipo_dato: string;
+  dias:      number;
+  puntos:    HistorialPunto[];
+}
+
+export const getMarcadorHistorial = (tipoDato: string, dias = 30) =>
+  request<MarcadorHistorial>(`/api/marcador/${encodeURIComponent(tipoDato)}/historial?dias=${dias}`);
+
 export const iniciarSesion = () =>
   request<{ session_id: string }>('/api/sesion/iniciar', { method: 'POST' });
 

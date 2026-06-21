@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import {
   getContexto, getAccessToken, iniciarSesion, cerrarSesion,
   preguntarBenjamin, getProfile, computeAge, uploadGarminExport,
-  type GarminImportResult,
+  getMarcadorHistorial,
+  type GarminImportResult, type HistorialPunto,
 } from '@/lib/api';
 import type { ContextoResponse, Profile } from '@/lib/api';
 import { fetchAppConfig, DEFAULT_CONFIG } from '@/lib/data';
@@ -122,31 +123,185 @@ function GaugeTile({ sist, score, nData, selected, onClick }: GaugeTileProps) {
   );
 }
 
-interface ReadoutCardProps {
-  name:   string;
-  value:  number | null;
-  unit:   string;
-  src:    string;
-  status: string;
+type Tendencia = 'mejorando' | 'bajando' | 'estable' | 'insuficientes_datos';
+
+function TrendArrow({ tendencia }: { tendencia: Tendencia | undefined }) {
+  if (!tendencia || tendencia === 'insuficientes_datos') return null;
+  const arrow = tendencia === 'mejorando' ? '↑' : tendencia === 'bajando' ? '↓' : '→';
+  const color = tendencia === 'mejorando' ? optimo : tendencia === 'bajando' ? atencion : '#7C828A';
+  return (
+    <span style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 15, color, marginLeft: 6, verticalAlign: 'middle' }}>
+      {arrow}
+    </span>
+  );
 }
 
-function ReadoutCard({ name, value, unit, src, status }: ReadoutCardProps) {
+interface ReadoutCardProps {
+  name:      string;
+  value:     number | null;
+  unit:      string;
+  src:       string;
+  status:    string;
+  tendencia: Tendencia | undefined;
+  onClick:   () => void;
+}
+
+function ReadoutCard({ name, value, unit, src, status, tendencia, onClick }: ReadoutCardProps) {
   const color = status === 'Óptimo' ? optimo : status === 'Sólido' ? champ : status === 'Atención' ? atencion : '#7C828A';
   return (
-    <div style={{
+    <button onClick={onClick} style={{
       border: '1px solid rgba(232,235,239,.08)', borderRadius: 14,
       padding: '24px 22px',
       background: 'rgba(232,235,239,.02)',
-    }}>
+      textAlign: 'left', cursor: 'pointer', width: '100%',
+      fontFamily: 'inherit', color: 'inherit', transition: '.15s',
+    }}
+    onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(205,180,137,.22)')}
+    onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(232,235,239,.08)')}
+    >
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
         <span style={{ fontSize: 40, fontWeight: 500, letterSpacing: '-.02em', color: value == null ? '#4B5563' : '#E8EBEF' }}>
           {value == null ? '–' : typeof value === 'number' ? (Number.isInteger(value) ? value : +value.toFixed(1)) : value}
         </span>
         {unit && <span style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, color: '#7C828A' }}>{unit}</span>}
+        <TrendArrow tendencia={tendencia} />
       </div>
       <div style={{ fontSize: 17, marginTop: 14, color: '#C5CAD1' }}>{name}</div>
       <div style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12.5, letterSpacing: '.03em', color: '#9298A0', marginTop: 8 }}>{src}</div>
       <div style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12.5, letterSpacing: '.12em', textTransform: 'uppercase', marginTop: 14, color }}>{status}</div>
+    </button>
+  );
+}
+
+// ─── Marker detail panel ──────────────────────────────────────────────────────
+
+function SparkLine({ puntos, color }: { puntos: HistorialPunto[]; color: string }) {
+  const valid = puntos.filter(p => p.valor != null);
+  if (valid.length < 2) return <div style={{ height: 80, display: 'grid', placeItems: 'center', color: '#5C6268', fontSize: 13 }}>Sin datos suficientes</div>;
+  const vals = valid.map(p => p.valor!);
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const range = maxV - minV || 1;
+  const W = 400, H = 80, PAD = 4;
+  const pts = valid.map((p, i) => {
+    const x = PAD + (i / (valid.length - 1)) * (W - PAD * 2);
+    const y = PAD + (1 - (p.valor! - minV) / range) * (H - PAD * 2);
+    return [x, y] as [number, number];
+  });
+  const d = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const lastPt = pts[pts.length - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={80} preserveAspectRatio="none" style={{ display: 'block', overflow: 'visible' }}>
+      <defs>
+        <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity=".18" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${d} L${lastPt[0].toFixed(1)},${H} L${pts[0][0].toFixed(1)},${H} Z`}
+        fill="url(#sparkGrad)" />
+      <path d={d} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={lastPt[0]} cy={lastPt[1]} r="3.5" fill={color} />
+    </svg>
+  );
+}
+
+function MarcadorDetailPanel({ tipoDato, name, unit, tendencia, onClose }: {
+  tipoDato:  string;
+  name:      string;
+  unit:      string;
+  tendencia: Tendencia | undefined;
+  onClose:   () => void;
+}) {
+  const [puntos,  setPuntos]  = useState<HistorialPunto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    getMarcadorHistorial(tipoDato, 30)
+      .then(d => setPuntos(d.puntos))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [tipoDato]);
+
+  const valid = puntos.filter(p => p.valor != null);
+  const last  = valid[valid.length - 1];
+  const color = tendencia === 'mejorando' ? optimo : tendencia === 'bajando' ? atencion : champ;
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 60,
+      background: 'rgba(8,9,11,.65)', backdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      padding: '0 0 40px',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: 560, maxWidth: '96vw',
+        background: '#101216',
+        border: '1px solid rgba(205,180,137,.22)', borderRadius: 22,
+        padding: '32px 34px',
+        boxShadow: '0 -20px 80px -20px rgba(0,0,0,.7)',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 500, color: '#E8EBEF' }}>
+              {name}
+              <TrendArrow tendencia={tendencia} />
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', color: '#7C828A', marginTop: 6 }}>
+              Últimos 30 días
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#9298A0', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+        </div>
+
+        {/* Current value */}
+        {last && (
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 24 }}>
+            <span style={{ fontSize: 56, fontWeight: 500, letterSpacing: '-.03em', color: '#E8EBEF' }}>
+              {Number.isInteger(last.valor) ? last.valor : last.valor?.toFixed(1)}
+            </span>
+            {unit && <span style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 14, color: '#7C828A' }}>{unit}</span>}
+            <span style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, color: '#5C6268', marginLeft: 8 }}>
+              {last.fecha}
+            </span>
+          </div>
+        )}
+
+        {/* Chart */}
+        <div style={{ background: 'rgba(232,235,239,.025)', borderRadius: 12, padding: '18px 16px', marginBottom: 20 }}>
+          {loading ? (
+            <div style={{ height: 80, display: 'grid', placeItems: 'center' }}>
+              <div style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${champ}`, borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+            </div>
+          ) : error ? (
+            <div style={{ height: 80, display: 'grid', placeItems: 'center', color: '#5C6268', fontSize: 13 }}>Error al cargar</div>
+          ) : (
+            <SparkLine puntos={puntos} color={color} />
+          )}
+        </div>
+
+        {/* Footer stats */}
+        {valid.length >= 2 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+            {[
+              { label: 'Mínimo', value: Math.min(...valid.map(p => p.valor!)) },
+              { label: 'Promedio', value: valid.reduce((a, b) => a + b.valor!, 0) / valid.length },
+              { label: 'Máximo', value: Math.max(...valid.map(p => p.valor!)) },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ background: 'rgba(232,235,239,.04)', borderRadius: 10, padding: '14px 16px', border: '1px solid rgba(232,235,239,.07)' }}>
+                <div style={{ fontSize: 24, fontWeight: 500, color: '#E8EBEF', letterSpacing: '-.02em' }}>
+                  {Number.isInteger(value) ? Math.round(value) : value.toFixed(1)}
+                </div>
+                <div style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: '#7C828A', marginTop: 5 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -398,6 +553,7 @@ export default function DashboardPage() {
   const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle');
   const [selKey, setSelKey]       = useState('cardiovascular');
   const [addOpen, setAddOpen]     = useState(false);
+  const [detailKey, setDetailKey] = useState<string | null>(null);
 
   // Benjamin inline
   const [benQuestion, setBenQuestion] = useState('');
@@ -761,10 +917,10 @@ export default function DashboardPage() {
               const unit  = ob?.unidad ?? appConfig.marcadores.unidades[key] ?? '';
               const src   = appConfig.marcadores.fuentes[key] ?? '';
               const valor = m?.valor ?? null;
-              const tend  = m?.tendencia;
+              const tend  = m?.tendencia as Tendencia | undefined;
               const stat  = tend === 'mejorando' ? 'Óptimo' : tend === 'bajando' ? 'Atención' : tend === 'estable' ? 'Sólido' : 'Sin datos';
               return (
-                <ReadoutCard key={key} name={name} value={valor} unit={unit} src={src} status={stat} />
+                <ReadoutCard key={key} name={name} value={valor} unit={unit} src={src} status={stat} tendencia={tend} onClick={() => setDetailKey(key)} />
               );
             })}
           </div>
@@ -784,6 +940,24 @@ export default function DashboardPage() {
       )}
 
       <AddDataModal open={addOpen} onClose={() => setAddOpen(false)} onSend={handleAddData} />
+
+      {detailKey && (() => {
+        const m    = marcadores[detailKey];
+        const ob   = obj6b?.[detailKey];
+        const name = ob?.nombre ?? appConfig.marcadores.nombres[detailKey] ?? detailKey;
+        const unit = ob?.unidad ?? appConfig.marcadores.unidades[detailKey] ?? '';
+        const tend = m?.tendencia as Tendencia | undefined;
+        return (
+          <MarcadorDetailPanel
+            tipoDato={detailKey}
+            name={name}
+            unit={unit}
+            tendencia={tend}
+            onClose={() => setDetailKey(null)}
+          />
+        );
+      })()}
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </AppShell>
   );
