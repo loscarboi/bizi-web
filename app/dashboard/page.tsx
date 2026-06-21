@@ -318,7 +318,6 @@ function AddDataModal({ open, onClose, onSend }: {
   const [doneMsg,   setDoneMsg]   = useState('');
   const [importRes, setImportRes] = useState<GarminImportResult | null>(null);
   const [importErr, setImportErr] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) { setStep('sources'); setText(''); setDoneMsg(''); setImportRes(null); setImportErr(''); }
@@ -336,8 +335,7 @@ function AddDataModal({ open, onClose, onSend }: {
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!e.target) return;
-    (e.target as HTMLInputElement).value = '';
+    e.target.value = '';
     if (!file) return;
     setStep('importing');
     setImportErr('');
@@ -358,6 +356,22 @@ function AddDataModal({ open, onClose, onSend }: {
     letterSpacing: '.1em', textTransform: 'uppercase',
   };
 
+  const cardStyle = (highlight: boolean): React.CSSProperties => ({
+    border: `1px solid ${highlight ? 'rgba(205,180,137,.4)' : 'rgba(232,235,239,.14)'}`,
+    borderRadius: 14, padding: '22px 14px', cursor: 'pointer',
+    background: highlight ? 'rgba(205,180,137,.06)' : 'rgba(232,235,239,.03)',
+    transition: '.18s', display: 'flex', flexDirection: 'column', alignItems: 'center',
+    fontFamily: 'inherit', color: 'inherit',
+  });
+
+  const iconBoxStyle = (highlight: boolean): React.CSSProperties => ({
+    width: 44, height: 44, marginBottom: 13, borderRadius: 11,
+    border: `1px solid ${highlight ? 'rgba(205,180,137,.6)' : 'rgba(205,180,137,.3)'}`,
+    display: 'grid', placeItems: 'center', color: champ,
+  });
+
+  const garminIcon = <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 50,
@@ -371,15 +385,6 @@ function AddDataModal({ open, onClose, onSend }: {
         padding: '34px 36px',
         boxShadow: '0 50px 130px -30px rgba(0,0,0,.85)',
       }}>
-        {/* Hidden file input for Garmin ZIP/CSV */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".zip,.csv"
-          style={{ display: 'none' }}
-          onChange={handleFileSelected}
-        />
-
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ fontSize: 25, fontWeight: 500, color: '#E8EBEF' }}>Añadir datos</div>
@@ -398,36 +403,30 @@ function AddDataModal({ open, onClose, onSend }: {
               Sube un archivo de Garmin o escribe el dato directamente — Benjamin lo registra por ti.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              {/* Garmin — label nativo para que el file picker funcione sin JS .click() */}
+              <label style={cardStyle(true)}>
+                <span style={iconBoxStyle(true)}>{garminIcon}</span>
+                <span style={{ fontSize: 15, color: '#E2E5EA' }}>Archivo Garmin</span>
+                <span style={{ ...monoStyle, fontSize: 11, color: '#7C828A', marginTop: 6 }}>ZIP · CSV</span>
+                <input
+                  type="file"
+                  accept=".zip,.csv"
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelected}
+                />
+              </label>
               {[
-                {
-                  icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
-                  label: 'Archivo Garmin', sub: 'ZIP · CSV',
-                  action: () => fileInputRef.current?.click(),
-                  highlight: true,
-                },
                 {
                   icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.5" r="3.5"/></svg>,
                   label: 'Foto de analítica', sub: 'Descríbela',
-                  action: () => setStep('manual'),
                 },
                 {
                   icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="13" y2="17"/></svg>,
                   label: 'Escribir dato', sub: 'Manual',
-                  action: () => setStep('manual'),
                 },
-              ].map(({ icon, label, sub, action, highlight }) => (
-                <button key={label} onClick={action} style={{
-                  border: `1px solid ${highlight ? 'rgba(205,180,137,.4)' : 'rgba(232,235,239,.14)'}`,
-                  borderRadius: 14, padding: '22px 14px', cursor: 'pointer',
-                  background: highlight ? 'rgba(205,180,137,.06)' : 'rgba(232,235,239,.03)',
-                  transition: '.18s', display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  fontFamily: 'inherit', color: 'inherit',
-                }}>
-                  <span style={{
-                    width: 44, height: 44, marginBottom: 13, borderRadius: 11,
-                    border: `1px solid ${highlight ? 'rgba(205,180,137,.6)' : 'rgba(205,180,137,.3)'}`,
-                    display: 'grid', placeItems: 'center', color: champ,
-                  }}>{icon}</span>
+              ].map(({ icon, label, sub }) => (
+                <button key={label} onClick={() => setStep('manual')} style={cardStyle(false)}>
+                  <span style={iconBoxStyle(false)}>{icon}</span>
                   <span style={{ fontSize: 15, color: '#E2E5EA' }}>{label}</span>
                   <span style={{ ...monoStyle, fontSize: 11, color: '#7C828A', marginTop: 6 }}>{sub}</span>
                 </button>
@@ -569,7 +568,7 @@ export default function DashboardPage() {
       setError('');
     } catch (err: unknown) {
       const e = err as { code?: string; message?: string };
-      if (e.code === 'session_expired') { router.push('/login'); return; }
+      if (e.code === 'session_expired' || e.code === 'account_deleted') { router.push('/login'); return; }
       setError(e.message ?? 'Error al cargar datos');
     }
   }, [router]);

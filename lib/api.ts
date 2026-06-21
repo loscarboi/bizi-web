@@ -46,6 +46,11 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   });
 
   if (res.status === 401 && retry) {
+    const body = await res.json().catch(() => ({})) as Record<string, string>;
+    if (body.code === 'account_deleted') {
+      clearTokens();
+      throw Object.assign(new Error('account_deleted'), { code: 'account_deleted' });
+    }
     const newToken = await refreshAccessToken();
     if (newToken) return request<T>(path, init, false);
     throw Object.assign(new Error('session_expired'), { code: 'session_expired' });
