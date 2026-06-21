@@ -165,6 +165,31 @@ export const getProfile = () => request<Profile>('/api/auth/perfil');
 
 // ─── Benjamin ────────────────────────────────────────────────────────────────
 
+export interface GarminImportResult {
+  ok: boolean;
+  registradas: number;
+  workouts: number;
+  parsed: string[];
+  skipped: string[];
+}
+
+export async function uploadGarminExport(file: File): Promise<GarminImportResult> {
+  const token = getAccessToken();
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE_URL}/api/garmin/import`, {
+    method: 'POST',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: formData,
+  });
+  if (res.status === 401) throw Object.assign(new Error('session_expired'), { code: 'session_expired' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as Record<string, string>).error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export const iniciarSesion = () =>
   request<{ session_id: string }>('/api/sesion/iniciar', { method: 'POST' });
 

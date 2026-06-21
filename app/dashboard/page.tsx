@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   getContexto, getAccessToken, iniciarSesion, cerrarSesion,
-  preguntarBenjamin, getProfile, computeAge,
+  preguntarBenjamin, getProfile, computeAge, uploadGarminExport,
+  type GarminImportResult,
 } from '@/lib/api';
 import type { ContextoResponse, Profile } from '@/lib/api';
 import { fetchAppConfig, DEFAULT_CONFIG } from '@/lib/data';
@@ -152,16 +153,21 @@ function ReadoutCard({ name, value, unit, src, status }: ReadoutCardProps) {
 
 // ─── Add data modal ───────────────────────────────────────────────────────────
 
-type ModalStep = 'sources' | 'manual' | 'sending' | 'done';
+type ModalStep = 'sources' | 'manual' | 'sending' | 'done' | 'importing' | 'imported';
 
 function AddDataModal({ open, onClose, onSend }: {
   open: boolean; onClose: () => void; onSend: (text: string) => Promise<void>;
 }) {
-  const [step, setStep] = useState<ModalStep>('sources');
-  const [text, setText] = useState('');
-  const [doneMsg, setDoneMsg] = useState('');
+  const [step,      setStep]      = useState<ModalStep>('sources');
+  const [text,      setText]      = useState('');
+  const [doneMsg,   setDoneMsg]   = useState('');
+  const [importRes, setImportRes] = useState<GarminImportResult | null>(null);
+  const [importErr, setImportErr] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (!open) { setStep('sources'); setText(''); setDoneMsg(''); } }, [open]);
+  useEffect(() => {
+    if (!open) { setStep('sources'); setText(''); setDoneMsg(''); setImportRes(null); setImportErr(''); }
+  }, [open]);
 
   async function handleSend() {
     if (!text.trim()) return;
@@ -170,12 +176,32 @@ function AddDataModal({ open, onClose, onSend }: {
       await onSend(text.trim());
       setDoneMsg(text.trim());
       setStep('done');
-    } catch {
-      setStep('manual');
+    } catch { setStep('manual'); }
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!e.target) return;
+    (e.target as HTMLInputElement).value = '';
+    if (!file) return;
+    setStep('importing');
+    setImportErr('');
+    try {
+      const result = await uploadGarminExport(file);
+      setImportRes(result);
+      setStep('imported');
+    } catch (err: unknown) {
+      setImportErr(err instanceof Error ? err.message : 'Error al importar');
+      setStep('sources');
     }
   }
 
   if (!open) return null;
+
+  const monoStyle: React.CSSProperties = {
+    fontFamily: 'var(--font-mono), monospace', fontSize: 12.5,
+    letterSpacing: '.1em', textTransform: 'uppercase',
+  };
 
   return (
     <div onClick={onClose} style={{
@@ -190,40 +216,71 @@ function AddDataModal({ open, onClose, onSend }: {
         padding: '34px 36px',
         boxShadow: '0 50px 130px -30px rgba(0,0,0,.85)',
       }}>
+        {/* Hidden file input for Garmin ZIP/CSV */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".zip,.csv"
+          style={{ display: 'none' }}
+          onChange={handleFileSelected}
+        />
+
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ fontSize: 25, fontWeight: 500, color: '#E8EBEF' }}>Añadir datos</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#9298A0', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
 
+        {importErr && (
+          <div style={{ marginBottom: 14, padding: '12px 16px', borderRadius: 10, background: 'rgba(212,154,126,.1)', border: '1px solid rgba(212,154,126,.3)', color: atencion, fontSize: 14 }}>
+            {importErr}
+          </div>
+        )}
+
         {step === 'sources' && (
           <>
             <p style={{ fontSize: 16, lineHeight: 1.55, color: '#AEB4BC', marginBottom: 26 }}>
-              Entrégaselos a Benjamin. Los lee, extrae los valores y te pide confirmación — sin formularios que rellenar.
+              Sube un archivo de Garmin o escribe el dato directamente — Benjamin lo registra por ti.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               {[
-                { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.5" r="3.5"/></svg>, label: 'Foto de analítica', sub: 'Cámara', action: () => setStep('manual') },
-                { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>, label: 'Documento', sub: 'PDF · imagen', action: () => setStep('manual') },
-                { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="13" y2="17"/></svg>, label: 'Escribir dato', sub: 'Manual', action: () => setStep('manual') },
-              ].map(({ icon, label, sub, action }) => (
+                {
+                  icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+                  label: 'Archivo Garmin', sub: 'ZIP · CSV',
+                  action: () => fileInputRef.current?.click(),
+                  highlight: true,
+                },
+                {
+                  icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.5" r="3.5"/></svg>,
+                  label: 'Foto de analítica', sub: 'Descríbela',
+                  action: () => setStep('manual'),
+                },
+                {
+                  icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="13" y2="17"/></svg>,
+                  label: 'Escribir dato', sub: 'Manual',
+                  action: () => setStep('manual'),
+                },
+              ].map(({ icon, label, sub, action, highlight }) => (
                 <button key={label} onClick={action} style={{
-                  border: '1px solid rgba(232,235,239,.14)', borderRadius: 14,
-                  padding: '22px 14px', cursor: 'pointer',
-                  background: 'rgba(232,235,239,.03)', transition: '.18s',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  border: `1px solid ${highlight ? 'rgba(205,180,137,.4)' : 'rgba(232,235,239,.14)'}`,
+                  borderRadius: 14, padding: '22px 14px', cursor: 'pointer',
+                  background: highlight ? 'rgba(205,180,137,.06)' : 'rgba(232,235,239,.03)',
+                  transition: '.18s', display: 'flex', flexDirection: 'column', alignItems: 'center',
                   fontFamily: 'inherit', color: 'inherit',
                 }}>
                   <span style={{
                     width: 44, height: 44, marginBottom: 13, borderRadius: 11,
-                    border: '1px solid rgba(205,180,137,.4)',
+                    border: `1px solid ${highlight ? 'rgba(205,180,137,.6)' : 'rgba(205,180,137,.3)'}`,
                     display: 'grid', placeItems: 'center', color: champ,
                   }}>{icon}</span>
                   <span style={{ fontSize: 15, color: '#E2E5EA' }}>{label}</span>
-                  <span style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: '#7C828A', marginTop: 6 }}>{sub}</span>
+                  <span style={{ ...monoStyle, fontSize: 11, color: '#7C828A', marginTop: 6 }}>{sub}</span>
                 </button>
               ))}
             </div>
+            <p style={{ ...monoStyle, fontSize: 11, color: '#5C6268', marginTop: 18, textAlign: 'center', letterSpacing: '.06em' }}>
+              Garmin Connect → Actividades → Exportar formato original · o exportación completa de datos
+            </p>
           </>
         )}
 
@@ -233,9 +290,7 @@ function AddDataModal({ open, onClose, onSend }: {
               Describe el valor que quieres registrar. Por ejemplo: "Mi HbA1c fue 5.2% y la glucosa en ayunas 88 mg/dL".
             </p>
             <textarea
-              autoFocus
-              value={text}
-              onChange={e => setText(e.target.value)}
+              autoFocus value={text} onChange={e => setText(e.target.value)}
               placeholder="Describe los valores de tu analítica o medición…"
               rows={4}
               style={{
@@ -249,19 +304,13 @@ function AddDataModal({ open, onClose, onSend }: {
             <div style={{ display: 'flex', gap: 12 }}>
               <button onClick={() => setStep('sources')} style={{
                 flex: 1, background: 'transparent', border: '1px solid rgba(232,235,239,.2)',
-                color: '#C5CAD1', borderRadius: 12, padding: 14, cursor: 'pointer',
-                fontFamily: 'var(--font-mono), monospace', fontSize: 12.5, letterSpacing: '.1em', textTransform: 'uppercase',
-              }}>
-                Volver
-              </button>
+                color: '#C5CAD1', borderRadius: 12, padding: 14, cursor: 'pointer', ...monoStyle,
+              }}>Volver</button>
               <button onClick={handleSend} disabled={!text.trim()} style={{
                 flex: 1, background: champ, border: 'none', color: '#08090B',
                 borderRadius: 12, padding: 14, cursor: text.trim() ? 'pointer' : 'not-allowed',
-                opacity: text.trim() ? 1 : .5,
-                fontFamily: 'var(--font-mono), monospace', fontSize: 12.5, letterSpacing: '.1em', textTransform: 'uppercase',
-              }}>
-                Enviar a Benjamin
-              </button>
+                opacity: text.trim() ? 1 : .5, ...monoStyle,
+              }}>Enviar a Benjamin</button>
             </div>
           </>
         )}
@@ -272,39 +321,56 @@ function AddDataModal({ open, onClose, onSend }: {
           </div>
         )}
 
+        {step === 'importing' && (
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <div style={{ ...monoStyle, color: champ, marginBottom: 12 }}>Importando datos de Garmin…</div>
+            <div style={{ color: '#7C828A', fontSize: 14 }}>Esto puede tardar unos segundos</div>
+          </div>
+        )}
+
+        {step === 'imported' && importRes && (
+          <div style={{ border: '1px solid rgba(205,180,137,.30)', borderRadius: 16, padding: '22px 24px', background: 'linear-gradient(180deg, rgba(205,180,137,.06), transparent)' }}>
+            <div style={{ ...monoStyle, color: champ, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <span style={{ width: 24, height: 24, borderRadius: '50%', border: '1px solid rgba(205,180,137,.6)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-serif), serif', fontSize: 13, color: champ }}>✓</span>
+              Importación completada
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+              {[
+                { label: 'Métricas importadas', value: importRes.registradas },
+                { label: 'Actividades', value: importRes.workouts },
+              ].map(({ label, value }) => (
+                <div key={label} style={{ background: 'rgba(232,235,239,.04)', borderRadius: 10, padding: '14px 16px', border: '1px solid rgba(232,235,239,.08)' }}>
+                  <div style={{ fontSize: 32, fontWeight: 500, color: '#E8EBEF', letterSpacing: '-.02em' }}>{value}</div>
+                  <div style={{ ...monoStyle, fontSize: 11, color: '#9298A0', marginTop: 4 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+            {importRes.parsed.length > 0 && (
+              <div style={{ ...monoStyle, fontSize: 11, color: '#7C828A', marginBottom: 16 }}>
+                {importRes.parsed.join(' · ')}
+              </div>
+            )}
+            <div style={{ ...monoStyle, fontSize: 11, color: '#5C6268', marginBottom: 20 }}>
+              Benjamin actualizará tu contexto automáticamente en los próximos minutos.
+            </div>
+            <button onClick={onClose} style={{
+              width: '100%', background: champ, border: 'none', color: '#08090B',
+              borderRadius: 12, padding: 14, cursor: 'pointer', ...monoStyle,
+            }}>Listo</button>
+          </div>
+        )}
+
         {step === 'done' && (
-          <div style={{
-            border: '1px solid rgba(205,180,137,.30)', borderRadius: 16,
-            padding: '22px 24px',
-            background: 'linear-gradient(180deg, rgba(205,180,137,.06), transparent)',
-            marginTop: 8,
-          }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              fontFamily: 'var(--font-mono), monospace', fontSize: 12,
-              letterSpacing: '.08em', textTransform: 'uppercase', color: champ,
-              marginBottom: 16,
-            }}>
-              <span style={{
-                width: 24, height: 24, borderRadius: '50%',
-                border: '1px solid rgba(205,180,137,.6)',
-                display: 'grid', placeItems: 'center',
-                fontFamily: 'var(--font-serif), serif', fontSize: 13, color: champ,
-              }}>B</span>
+          <div style={{ border: '1px solid rgba(205,180,137,.30)', borderRadius: 16, padding: '22px 24px', background: 'linear-gradient(180deg, rgba(205,180,137,.06), transparent)', marginTop: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...monoStyle, color: champ, marginBottom: 16 }}>
+              <span style={{ width: 24, height: 24, borderRadius: '50%', border: '1px solid rgba(205,180,137,.6)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-serif), serif', fontSize: 13, color: champ }}>B</span>
               Benjamin ha recibido el dato
             </div>
-            <p style={{ fontSize: 16, color: '#C5CAD1', lineHeight: 1.5, marginBottom: 20 }}>
-              "{doneMsg}"
-            </p>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={onClose} style={{
-                flex: 1, background: champ, border: 'none', color: '#08090B',
-                borderRadius: 12, padding: 14, cursor: 'pointer',
-                fontFamily: 'var(--font-mono), monospace', fontSize: 12.5, letterSpacing: '.1em', textTransform: 'uppercase',
-              }}>
-                Listo
-              </button>
-            </div>
+            <p style={{ fontSize: 16, color: '#C5CAD1', lineHeight: 1.5, marginBottom: 20 }}>"{doneMsg}"</p>
+            <button onClick={onClose} style={{
+              width: '100%', background: champ, border: 'none', color: '#08090B',
+              borderRadius: 12, padding: 14, cursor: 'pointer', ...monoStyle,
+            }}>Listo</button>
           </div>
         )}
       </div>
