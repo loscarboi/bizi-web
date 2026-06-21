@@ -4,54 +4,12 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clearTokens, logoutApi, getAccessToken } from '@/lib/api';
 import AppShell from '@/components/AppShell';
+import Topbar from '@/components/Topbar';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://grateful-charm-production.up.railway.app';
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <p className="text-[11px] font-semibold tracking-[0.15em] uppercase px-1" style={{ color: '#4B5563' }}>
-        {title}
-      </p>
-      <div className="rounded-xl overflow-hidden" style={{ background: '#1C1C3A', border: '1px solid #2E2E58' }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Row({
-  label, value, chevron, danger, onClick,
-}: {
-  label: string;
-  value?: string;
-  chevron?: boolean;
-  danger?: boolean;
-  onClick?: () => void;
-}) {
-  const [pressed, setPressed] = useState(false);
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={!onClick}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
-      onMouseLeave={() => setPressed(false)}
-      className="flex w-full items-center justify-between px-4 py-3.5 border-b last:border-0 text-left transition-colors disabled:cursor-default"
-      style={{
-        borderColor: '#2E2E58',
-        background: pressed ? '#252550' : 'transparent',
-      }}
-    >
-      <span className="text-sm" style={{ color: danger ? '#C0524A' : '#F5F3EE' }}>{label}</span>
-      <div className="flex items-center gap-2">
-        {value && <span className="text-sm" style={{ color: '#4B5563' }}>{value}</span>}
-        {chevron && <span className="text-lg" style={{ color: '#4B5563' }}>›</span>}
-      </div>
-    </button>
-  );
-}
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://grateful-charm-production.up.railway.app';
+const champ    = '#CDB489';
+const atencion = '#D49A7E';
+const optimo   = '#9FC6AE';
 
 export default function AjustesPage() {
   const router = useRouter();
@@ -66,14 +24,11 @@ export default function AjustesPage() {
   }
 
   async function handleEliminar() {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
+    if (!confirmDelete) { setConfirmDelete(true); return; }
     setDeleting(true);
     try {
       const token = getAccessToken();
-      await fetch(`${API_URL}/api/auth/cuenta`, {
+      await fetch(`${BASE_URL}/api/auth/cuenta`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token ?? ''}` },
       });
@@ -84,61 +39,128 @@ export default function AjustesPage() {
 
   return (
     <AppShell>
-      <div className="max-w-xl mx-auto px-6 py-8 space-y-8">
-        <h1 className="text-xl font-light tracking-tight" style={{ color: '#F5F3EE' }}>Ajustes</h1>
+      <Topbar />
 
+      <div style={{ padding: '46px 56px 64px', maxWidth: 680 }}>
+
+        <h1 style={{ fontSize: 44, fontWeight: 500, letterSpacing: '-.02em', color: '#E8EBEF', marginBottom: 8 }}>
+          Ajustes
+        </h1>
+        <div style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 13, letterSpacing: '.04em', color: '#9298A0', marginBottom: 46 }}>
+          Cuenta y privacidad
+        </div>
+
+        {/* Privacy */}
+        <Section title="Privacidad">
+          <InfoRow label="Tus datos de salud" value="Cifrados en reposo y tránsito" />
+          <InfoRow label="Conversaciones con Benjamin" value="Efímeras · no se guardan" />
+          <InfoRow label="Insights y biomarcadores" value="Cifrados · solo tú los ves" />
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 9,
+            fontFamily: 'var(--font-mono), monospace', fontSize: 12, letterSpacing: '.04em',
+            color: '#7C828A', lineHeight: 1.5, padding: '16px 0',
+          }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: optimo, flexShrink: 0, display: 'inline-block' }} />
+            Arquitectura de triple base de datos — tu identidad nunca toca tus datos de salud.
+          </div>
+        </Section>
+
+        {/* Account */}
         <Section title="Cuenta">
-          <Row label="Cerrar sesión" chevron onClick={handleLogout} />
+          <ActionRow label="Cerrar sesión" onClick={handleLogout} />
           {!confirmDelete ? (
-            <Row label="Eliminar cuenta y todos mis datos" danger chevron onClick={handleEliminar} />
+            <div style={{ padding: '16px 0' }}>
+              <button onClick={handleEliminar} style={{
+                fontFamily: 'var(--font-mono), monospace', fontSize: 13, letterSpacing: '.08em', textTransform: 'uppercase',
+                color: atencion, background: 'transparent',
+                border: `1px solid rgba(212,154,126,.35)`, borderRadius: 12,
+                padding: '14px 24px', cursor: 'pointer', transition: '.18s',
+              }}>
+                Eliminar cuenta y todos mis datos
+              </button>
+            </div>
           ) : (
-            <div className="px-4 py-4 border-t" style={{ borderColor: '#2E2E58' }}>
-              <p className="text-sm mb-3" style={{ color: '#C0524A' }}>
-                Se borrarán TODOS tus datos permanentemente. Esta acción no se puede deshacer.
+            <div style={{ padding: '20px 0' }}>
+              <p style={{ fontSize: 16, color: '#AEB4BC', marginBottom: 16, lineHeight: 1.5 }}>
+                Esta acción es irreversible. Se borrarán TODOS tus datos permanentemente.
               </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="flex-1 py-2 rounded-lg text-sm"
-                  style={{ background: '#252550', color: '#F5F3EE' }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleEliminar}
-                  disabled={deleting}
-                  className="flex-1 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
-                  style={{ background: '#C0524A', color: '#F5F3EE' }}
-                >
-                  {deleting ? 'Eliminando…' : 'Eliminar todo'}
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button onClick={() => setConfirmDelete(false)} style={{
+                  fontFamily: 'var(--font-mono), monospace', fontSize: 13, letterSpacing: '.08em', textTransform: 'uppercase',
+                  color: '#C5CAD1', background: 'transparent',
+                  border: '1px solid rgba(232,235,239,.2)', borderRadius: 12,
+                  padding: '14px 24px', cursor: 'pointer',
+                }}>Cancelar</button>
+                <button onClick={handleEliminar} disabled={deleting} style={{
+                  fontFamily: 'var(--font-mono), monospace', fontSize: 13, letterSpacing: '.08em', textTransform: 'uppercase',
+                  color: '#08090B', background: atencion, border: 'none', borderRadius: 12,
+                  padding: '14px 24px', cursor: deleting ? 'not-allowed' : 'pointer',
+                  opacity: deleting ? .7 : 1,
+                }}>
+                  {deleting ? 'Eliminando…' : 'Confirmar — eliminar todo'}
                 </button>
               </div>
             </div>
           )}
         </Section>
 
+        {/* Info */}
         <Section title="Información">
-          <Row
-            label="Preguntas frecuentes"
-            chevron
-            onClick={() => window.open('https://bizi.living/faq', '_blank')}
-          />
-          <Row
-            label="Sobre Benjamin y el Libro Blanco"
-            chevron
-            onClick={() => window.open('https://bizi.living/benjamin', '_blank')}
-          />
-          <Row
-            label="Cómo protegemos tu privacidad"
-            chevron
-            onClick={() => window.open('https://bizi.living/privacidad', '_blank')}
-          />
+          <InfoRow label="Versión" value="Bizi v1.0.0-beta" />
+          <InfoRow label="Dominio" value="bizi.living" />
+          <InfoRow label="Modelo IA" value="Benjamin — Claude Sonnet" />
         </Section>
 
-        <p className="text-xs text-center" style={{ color: '#4B5563' }}>
-          Bizi v1.0.0-beta · bizi.living
-        </p>
+        <div style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12, letterSpacing: '.04em', color: '#4B5563', marginTop: 40 }}>
+          Bizi · bizi.living · v1.0.0-beta
+        </div>
       </div>
     </AppShell>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 40 }}>
+      <div style={{
+        fontFamily: 'var(--font-mono), monospace', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase',
+        color: '#9298A0', marginBottom: 16,
+      }}>
+        {title}
+      </div>
+      <div style={{
+        border: '1px solid rgba(232,235,239,.08)', borderRadius: 16,
+        background: 'linear-gradient(180deg, rgba(232,235,239,.022), transparent)',
+        padding: '0 24px',
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      padding: '16px 0', borderBottom: '1px solid rgba(232,235,239,.06)',
+    }}>
+      <span style={{ fontSize: 15, color: '#C5CAD1' }}>{label}</span>
+      <span style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 13, letterSpacing: '.03em', color: '#7C828A' }}>{value}</span>
+    </div>
+  );
+}
+
+function ActionRow({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center',
+      padding: '16px 0', borderBottom: '1px solid rgba(232,235,239,.06)',
+      background: 'none', border: 'none',
+      cursor: 'pointer', fontFamily: 'inherit',
+    } as React.CSSProperties}>
+      <span style={{ fontSize: 15, color: '#E8EBEF' }}>{label}</span>
+      <span style={{ color: '#7C828A', fontSize: 20 }}>›</span>
+    </button>
   );
 }

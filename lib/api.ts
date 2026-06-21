@@ -142,6 +142,27 @@ export interface ContextoResponse {
 export const getContexto = (regenerar = false) =>
   request<ContextoResponse>(`/api/contexto${regenerar ? '?regenerar=true' : ''}`);
 
+// ─── Profile ─────────────────────────────────────────────────────────────────
+
+export interface Profile {
+  nombre?:           string;
+  apellidos?:        string;
+  fecha_nacimiento?: string;
+  sexo?:             string;
+  altura_cm?:        number;
+}
+
+export function computeAge(fechaNacimiento: string): number {
+  const birth = new Date(fechaNacimiento);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+}
+
+export const getProfile = () => request<Profile>('/api/auth/perfil');
+
 // ─── Benjamin ────────────────────────────────────────────────────────────────
 
 export const iniciarSesion = () =>
