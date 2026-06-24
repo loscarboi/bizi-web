@@ -8,7 +8,7 @@ import {
   getMarcadorHistorial,
   type GarminImportResult, type HistorialPunto,
 } from '@/lib/api';
-import type { ContextoResponse, Profile } from '@/lib/api';
+import type { ContextoResponse, ConflictoDato, Profile } from '@/lib/api';
 import { fetchAppConfig, DEFAULT_CONFIG } from '@/lib/data';
 import type { AppConfig } from '@/lib/data';
 import AppShell from '@/components/AppShell';
@@ -41,6 +41,23 @@ function timeAgo(iso: string): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `hace ${h} h`;
   return `hace ${Math.floor(h / 24)} d`;
+}
+
+const METRICA_LABEL: Record<string, string> = {
+  pasos_diarios:        'pasos',
+  sueno_horas:          'sueño',
+  hrv_ms:               'HRV',
+  fc_reposo:            'FC reposo',
+  distancia_km:         'distancia',
+  calorias_activas_kcal:'calorías activas',
+  vo2max:               'VO2max',
+  recovery_score:       'recovery',
+  spo2_pct:             'SpO2',
+  frecuencia_respiratoria: 'frec. respiratoria',
+};
+
+function metricaLabel(m: string): string {
+  return METRICA_LABEL[m] ?? m.replace(/_/g, ' ');
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -654,6 +671,8 @@ export default function DashboardPage() {
   const selScore   = selDetalle?.score ?? null;
   const selColor   = statColor(selScore);
 
+  const conflictos: ConflictoDato[] = contexto?.conflictos_datos ?? [];
+
   const benjaminNote = benNote || (ctx18a?.resumen ?? '');
 
   return (
@@ -848,6 +867,50 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+
+      {/* Conflictos de datos */}
+      {!loading && conflictos.length > 0 && (
+        <div style={{
+          margin: '16px 56px 0',
+          padding: '14px 20px',
+          background: 'rgba(205,180,137,.06)',
+          border: '1px solid rgba(205,180,137,.22)',
+          borderRadius: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+          flexWrap: 'wrap',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 15, color: champ, lineHeight: 1 }}>⚠</span>
+            <span style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 12.5, letterSpacing: '.04em', color: '#C5CAD1' }}>
+              <span style={{ color: champ }}>{conflictos.length} {conflictos.length === 1 ? 'dato' : 'datos'} sin confirmar</span>
+              {' · '}
+              {conflictos.slice(0, 3).map(c => metricaLabel(c.metrica)).join(', ')}
+              {conflictos.length > 3 && ` +${conflictos.length - 3} más`}
+              {' · Apple Watch y Garmin difieren'}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              const lista = conflictos.map(c => {
+                const fuentes = Object.entries(c.valor_fuentes ?? {})
+                  .map(([f, v]) => `${f === 'apple_health' ? 'Apple Watch' : f} = ${v}`)
+                  .join(', ');
+                return `${metricaLabel(c.metrica)} el ${c.fecha} (${fuentes})`;
+              }).join('; ');
+              setBenQuestion(`Tengo datos en conflicto: ${lista}. ¿Cuál debería usar?`);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            style={{
+              fontFamily: 'var(--font-mono), monospace', fontSize: 12, letterSpacing: '.1em',
+              textTransform: 'uppercase', color: '#08090B', background: champ,
+              border: 'none', borderRadius: 8, padding: '8px 18px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}
+          >
+            Resolver con Benjamin
+          </button>
+        </div>
+      )}
 
       {/* Systems grid */}
       <section style={{ padding: '46px 56px 8px' }}>

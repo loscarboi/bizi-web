@@ -135,13 +135,20 @@ export interface Objetivo6b {
   fuente:               string;
 }
 
-export interface ContextoResponse {
-  pseudo2:       string;
+export interface ConflictoDato {
+  metrica:       string;
   fecha:         string;
-  contexto_18a:  Contexto18a | null;
-  insights:      { tipo: string; observacion: string; confianza: number }[];
-  objetivos_6b?: Record<string, Objetivo6b>;
-  generado_en:   string;
+  valor_fuentes: Record<string, number>;
+}
+
+export interface ContextoResponse {
+  pseudo2:          string;
+  fecha:            string;
+  contexto_18a:     Contexto18a | null;
+  insights:         { tipo: string; observacion: string; confianza: number }[];
+  objetivos_6b?:    Record<string, Objetivo6b>;
+  conflictos_datos?: ConflictoDato[];
+  generado_en:      string;
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
